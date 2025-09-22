@@ -11,95 +11,101 @@ import env from './environments';
 import mountPaymentsEndpoints from './handlers/payments';
 import mountUserEndpoints from './handlers/users';
 
-// We must import typedefs for ts-node-dev to pick them up when they change (even though tsc would supposedly
-// have no problem here)
-// https://stackoverflow.com/questions/65108033/property-user-does-not-exist-on-type-session-partialsessiondata#comment125163548_65381085
+// Типы для session (как у тебя и было)
 import "./types/session";
 
+// ---------- MongoDB ----------
+
 const dbName = env.mongo_db_name;
-const mongoUri = `mongodb://${env.mongo_host}/${dbName}`;
-const mongoClientOptions = {
-  authSource: "admin",
-  auth: {
-    username: env.mongo_user,
-    password: env.mongo_password,
-  },
-}
 
+// 1) Предпочитаем полный SRV-URI из переменной окружения (рекомендуется для Atlas)
+const mongoUri =
+  process.env.MONGODB_URI ||
+  `mongodb+srv://${encodeURIComponent(env.mongo_user)}:${encodeURIComponent(
+    env.mongo_password
+  )}@${env.mongo_host}/${dbName}?retryWrites=true&w=majority`;
 
-//
-// I. Initialize and set up the express app and various middlewares and packages:
-//
+// Для SRV-строки отдельные опции авторизации не нужны — всё в URI
+const mongoClientOptions = {}; // оставляем пустым
+
+// ---------- Express App и мидлвары ----------
 
 const app: express.Application = express();
 
-// Log requests to the console in a compact format:
+// Создадим папку для логов, чтобы не было ошибок при записи
+try {
+  fs.mkdirSync(path.join(__dirname, '..', 'log'), { recursive: true });
+} catch { /* noop */ }
+
+// Короткий лог в консоль
 app.use(logger('dev'));
 
-// Full log of all requests to /log/access.log:
+// Полный лог в файл
 app.use(logger('common', {
   stream: fs.createWriteStream(path.join(__dirname, '..', 'log', 'access.log'), { flags: 'a' }),
 }));
 
-// Enable response bodies to be sent as JSON:
-app.use(express.json())
+// Позволяем работать с JSON
+app.use(express.json());
 
-// Handle CORS:
+// CORS (разрешаем запросы с твоего фронтенда)
 app.use(cors({
   origin: env.frontend_url,
   credentials: true
 }));
 
-// Handle cookies 🍪
+// Cookies
 app.use(cookieParser());
 
-// Use sessions:
+// Сессии (храним в MongoDB)
 app.use(session({
   secret: env.session_secret,
   resave: false,
   saveUninitialized: false,
   store: MongoStore.create({
     mongoUrl: mongoUri,
-    mongoOptions: mongoClientOptions,
     dbName: dbName,
     collectionName: 'user_sessions'
   }),
 }));
 
+// ---------- Роуты ----------
 
-//
-// II. Mount app endpoints:
-//
-
-// Payments endpoint under /payments:
+// Платежи
 const paymentsRouter = express.Router();
 mountPaymentsEndpoints(paymentsRouter);
 app.use('/payments', paymentsRouter);
 
-// User endpoints (e.g signin, signout) under /user:
+// Пользователи (вход/выход)
 const userRouter = express.Router();
 mountUserEndpoints(userRouter);
 app.use('/user', userRouter);
 
-// Hello World page to check everything works:
+// Простой ответ на корень (для проверки)
 app.get('/', async (_, res) => {
   res.status(200).send({ message: "Hello, World!" });
 });
 
+// Health-check (Render будет стучаться сюда)
+app.get('/healthz', (_, res) => {
+  res.status(200).json({ status: 'ok' });
+});
 
-// III. Boot up the app:
+// ---------- Запуск сервера ----------
 
-app.listen(8000, async () => {
+const PORT = Number(process.env.PORT) || 8000;
+
+app.listen(PORT, async () => {
   try {
-    const client = await MongoClient.connect(mongoUri, mongoClientOptions)
+    const client = await MongoClient.connect(mongoUri, mongoClientOptions);
     const db = client.db(dbName);
     app.locals.orderCollection = db.collection('orders');
     app.locals.userCollection = db.collection('users');
-    console.log('Connected to MongoDB on: ', mongoUri)
+    console.log('Connected to MongoDB on:', mongoUri);
   } catch (err) {
-    console.error('Connection to MongoDB failed: ', err)
+    console.error('Connection to MongoDB failed:', err);
   }
 
-  console.log('App platform demo app - Backend listening on port 8000!');
+  console.log(`App platform demo app - Backend listening on port ${PORT}!`);
   console.log(`CORS config: configured to respond to a frontend hosted on ${env.frontend_url}`);
 });
