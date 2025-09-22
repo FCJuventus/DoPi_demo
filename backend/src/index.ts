@@ -97,7 +97,11 @@ const PORT = Number(process.env.PORT) || 8000;
 
 app.listen(PORT, async () => {
   try {
-    const client = await MongoClient.connect(mongoUri, mongoClientOptions);
+    const client = await MongoClient.connect(mongoUri, {
+      serverSelectionTimeoutMS: 20000, // ждём дольше, чтобы Atlas успел ответить
+      tls: true                       // явно включаем TLS
+    });
+
     const db = client.db(dbName);
     app.locals.orderCollection = db.collection('orders');
     app.locals.userCollection = db.collection('users');
