@@ -105,7 +105,11 @@ app.listen(PORT, async () => {
     const db = client.db(dbName);
     app.locals.orderCollection = db.collection('orders');
     app.locals.userCollection = db.collection('users');
-    console.log('Connected to MongoDB on:', mongoUri);
+
+    // 🔒 Логируем безопасно (без пароля)
+    const safeUri = mongoUri.replace(/:\/\/(.*)@/, '://***:***@');
+    console.log('Connected to MongoDB on:', safeUri);
+
   } catch (err) {
     console.error('Connection to MongoDB failed:', err);
   }
