@@ -57,6 +57,9 @@ app.use(cors({
 // Cookies
 app.use(cookieParser());
 
+// Render сидит за прокси → без этого secure cookie не будут работать
+app.set('trust proxy', 1);
+
 // Сессии (храним в MongoDB)
 app.use(session({
   secret: env.session_secret,
@@ -67,6 +70,9 @@ app.use(session({
     dbName: dbName,
     collectionName: 'user_sessions'
   }),
+  cookie: process.env.NODE_ENV === 'production'
+    ? { sameSite: 'none', secure: true } // для Render (https)
+    : { sameSite: 'lax', secure: false } // для локалки (http://localhost)
 }));
 
 // ---------- Роуты ----------
