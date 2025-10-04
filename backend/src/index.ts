@@ -49,8 +49,6 @@ app.use(logger('common', {
 app.use(express.json());
 
 // --- CORS: разрешаем несколько доверенных источников ---
-import cors from 'cors';
-
 const allowedOrigins = [
   env.frontend_url,                      // твой прод на Render из ENV
   'https://dopi-frontend.onrender.com', // явный прод-URL
