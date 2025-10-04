@@ -48,12 +48,24 @@ app.use(logger('common', {
 // Позволяем работать с JSON
 app.use(express.json());
 
-// CORS (разрешаем запросы с твоего фронтенда)
+// --- CORS: разрешаем несколько доверенных источников ---
+import cors from 'cors';
+
+const allowedOrigins = [
+  env.frontend_url,                      // твой прод на Render из ENV
+  'https://dopi-frontend.onrender.com', // явный прод-URL
+  // ↓ После того как добавишь PiNet субдомен в Dev Portal, вставь его сюда:
+  // 'https://<твой-поддомен>.pinet.org'  // пример, замени на точный
+];
+
 app.use(cors({
-  origin: env.frontend_url,
+  origin: (origin, cb) => {
+    // Разрешаем запросы без Origin (например, curl) и из белого списка
+    if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+    return cb(new Error('CORS blocked: ' + origin));
+  },
   credentials: true
 }));
-
 // Cookies
 app.use(cookieParser());
 
