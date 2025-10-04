@@ -121,6 +121,12 @@ app.listen(PORT, async () => {
     const db = client.db(dbName);
     app.locals.orderCollection = db.collection('orders');
     app.locals.userCollection = db.collection('users');
+    app.locals.jobCollection = db.collection('jobs');
+
+// индексы на старте (один раз создастся, дальше будет существовать)
+await app.locals.jobCollection.createIndex({ status: 1, createdAt: -1 });
+await app.locals.jobCollection.createIndex({ creatorUid: 1, createdAt: -1 });
+await app.locals.jobCollection.createIndex({ freelancerUid: 1, createdAt: -1 });
 
     // 🔒 Логируем безопасно (без пароля)
     const safeUri = mongoUri.replace(/:\/\/(.*)@/, '://***:***@');
