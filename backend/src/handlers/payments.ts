@@ -48,49 +48,68 @@ export default function mountPaymentsEndpoints(router: Router) {
   });
 
   // ===== 2) Approve — наш сервер готов принять платёж =====
-  router.post('/approve', async (req, res) => {
-    if (!req.session.currentUser) {
-      return res.status(401).json({ error: 'unauthorized', message: "Нужно войти" });
-    }
+router.post('/approve', async (req, res) => {
+  if (!req.session.currentUser) {
+    return res.status(401).json({ error: 'unauthorized', message: "Нужно войти" });
+  }
 
-    const app = req.app;
-    const payments = app.locals.orderCollection;
+  const app = req.app;
+  const payments = app.locals.orderCollection;
+  const jobs = app.locals.jobCollection; // ← добавили
 
-    const paymentId: string = req.body.paymentId;
+  const paymentId: string = req.body.paymentId;
 
-    // Забираем платёж с Pi — тут же лежит metadata (мы туда положим jobId/contractId/amount)
-    const currentPayment = await platformAPIClient.get(`/v2/payments/${paymentId}`);
-    const md = currentPayment.data.metadata || {};
+  // Забираем платёж у Pi — в metadata должны быть jobId, contractId, amount
+  const currentPayment = await platformAPIClient.get(`/v2/payments/${paymentId}`);
+  const md = currentPayment.data.metadata || {};
 
-    // Простейшая валидация метаданных
-    if (!md.jobId || !md.contractId || typeof md.amount !== 'number') {
-      return res.status(400).json({ message: 'Некорректные metadata: нужны jobId, contractId, amount' });
-    }
+  if (!md.jobId || !md.contractId || typeof md.amount !== 'number') {
+    return res.status(400).json({ message: 'Некорректные metadata: нужны jobId, contractId, amount' });
+  }
 
-    // Создаём запись о платеже (idempotent — не дублируем)
-    await payments.updateOne(
-      { pi_payment_id: paymentId },
-      {
-        $setOnInsert: {
-          pi_payment_id: paymentId,
-          jobId: md.jobId,
-          contractId: md.contractId,
-          payerUid: req.session.currentUser.uid,
-          amount: md.amount,
-          txid: null,
-          paid: false,
-          cancelled: false,
-          created_at: new Date()
-        }
+  // Проверим, что задача существует и сумма совпадает с её бюджетом
+  const jobId = new ObjectId(md.jobId);
+  const job = await jobs.findOne({ _id: jobId });
+
+  if (!job) {
+    return res.status(400).json({ message: 'Задача не найдена по jobId из metadata' });
+  }
+
+  // Если хочешь жёсткую проверку: сумма из metadata должна совпасть с бюджетом задачи
+  if (typeof job.budgetPi === 'number' && Number(md.amount) !== Number(job.budgetPi)) {
+    return res.status(400).json({ message: 'Сумма в metadata не совпадает с бюджетом задачи' });
+  }
+
+  // Создаём/поддерживаем запись о платеже (idempotent)
+  await payments.updateOne(
+    { pi_payment_id: paymentId },
+    {
+      $setOnInsert: {
+        pi_payment_id: paymentId,
+        jobId: job._id,                 // ← ссылка на задачу
+        contractId: md.contractId,
+        employerUid: req.session.currentUser.uid, // кто платит (у тебя было payerUid — унифицировал)
+        freelancerUid: job.freelancerUid ?? null, // можно заполнить, если задача уже "awarded"
+        amountPi: md.amount,            // унифицировал имя поля с задачей (amountPi)
+        txid: null,
+        paid: false,
+        cancelled: false,
+        created_at: new Date(),
+        updated_at: new Date(),
       },
-      { upsert: true }
-    );
+      $set: {
+        // если запись уже есть — хотя бы обновим updated_at
+        updated_at: new Date(),
+      }
+    },
+    { upsert: true }
+  );
 
-    // Говорим Pi, что мы готовы
-    await platformAPIClient.post(`/v2/payments/${paymentId}/approve`);
+  // Говорим Pi, что мы готовы принять платёж
+  await platformAPIClient.post(`/v2/payments/${paymentId}/approve`);
 
-    return res.status(200).json({ message: `Approved payment ${paymentId}` });
-  });
+  return res.status(200).json({ message: `Approved payment ${paymentId}` });
+});
 
   // ===== 3) Complete — клиент прислал txid (обычно после success из SDK) =====
   router.post('/complete', async (req, res) => {
