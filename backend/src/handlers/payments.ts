@@ -3,113 +3,242 @@ import { Router } from "express";
 import platformAPIClient from "../services/platformAPIClient";
 import "../types/session";
 
+/**
+ * Эндпоинты платежей и заказов.
+ * Модель (упрощённо):
+ *   orders: {
+ *     orderId: string,        // строковый id заказа (String(_id))
+ *     amount: number,         // сумма в Test-π
+ *     memo?: string,          // описание
+ *     status: 'created' | 'pending' | 'paid' | 'completed' | 'cancelled' | 'failed',
+ *     paymentId?: string,     // id платежа из Pi
+ *     txid?: string,          // хеш транзакции
+ *     uid?: string,           // пользователь из сессии (если был)
+ *     username?: string,
+ *     piPayment?: any,        // сырые данные платежа от Pi
+ *     createdAt: Date,
+ *     updatedAt: Date
+ *   }
+ */
+
 export default function mountPaymentsEndpoints(router: Router) {
-  // handle the incomplete payment
-  router.post('/incomplete', async (req, res) => {
-    const payment = req.body.payment;
-    const paymentId = payment.identifier;
-    const txid = payment.transaction && payment.transaction.txid;
-    const txURL = payment.transaction && payment.transaction._link;
+  /**
+   * 1) Создание заказа перед запуском оплаты в кошельке
+   * Фронтенд вызывает этот эндпоинт, получает orderId
+   * и кладёт его в metadata при вызове Pi.createPayment(...)
+   */
+  router.post('/create', async (req, res) => {
+    try {
+      const orders = req.app.locals.orderCollection as any;
 
-    /* 
-      implement your logic here
-      e.g. verifying the payment, delivering the item to the user, etc...
+      const { amount, memo } = req.body;
+      if (!amount || Number(amount) <= 0) {
+        return res.status(400).json({ error: 'amount обязателен и должен быть > 0' });
+      }
 
-      below is a naive example
-    */
+      const user = req.session?.currentUser; // может быть undefined, это не критично
 
-    // find the incomplete order
-    const app = req.app;
-    const orderCollection = app.locals.orderCollection;
-    const order = await orderCollection.findOne({ pi_payment_id: paymentId });
+      const doc = {
+        amount: Number(amount),
+        memo: memo || 'Order',
+        status: 'created',
+        uid: user?.uid,
+        username: user?.username,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
 
-    // order doesn't exist 
-    if (!order) {
-      return res.status(400).json({ message: "Order not found" });
+      const ins = await orders.insertOne(doc);
+      const orderId = String(ins.insertedId);
+      await orders.updateOne({ _id: ins.insertedId }, { $set: { orderId } });
+
+      return res.json({ orderId });
+    } catch (e) {
+      console.error('Создание заказа не удалось:', e);
+      return res.status(500).json({ error: 'failed to create order' });
     }
-
-    // check the transaction on the Pi blockchain
-    const horizonResponse = await axios.create({ timeout: 20000 }).get(txURL);
-    const paymentIdOnBlock = horizonResponse.data.memo;
-
-    // and check other data as well e.g. amount
-    if (paymentIdOnBlock !== order.pi_payment_id) {
-      return res.status(400).json({ message: "Payment id doesn't match." });
-    }
-
-    // mark the order as paid
-    await orderCollection.updateOne({ pi_payment_id: paymentId }, { $set: { txid, paid: true } });
-
-    // let Pi Servers know that the payment is completed
-    await platformAPIClient.post(`/v2/payments/${paymentId}/complete`, { txid });
-    return res.status(200).json({ message: `Handled the incomplete payment ${paymentId}` });
   });
 
-  // approve the current payment
+  /**
+   * 2) Подтверждение платежа (кошелёк вернул paymentId)
+   * Фронтенд вызывает после успешного подтверждения в приложении Pi.
+   * Мы проверяем платёж у Pi, находим заказ по metadata.orderId,
+   * обновляем заказ и завершаем платёж (POST /complete).
+   */
   router.post('/approve', async (req, res) => {
-    if (!req.session.currentUser) {
-      return res.status(401).json({ error: 'unauthorized', message: "User needs to sign in first" });
+    try {
+      const { paymentId } = req.body;
+      if (!paymentId) {
+        return res.status(400).json({ error: 'paymentId обязателен' });
+      }
+
+      // Получаем платёж с Pi Platform API — так мы убеждаемся, что paymentId настоящий.
+      const { data: payment } = await platformAPIClient.get(`/v2/payments/${paymentId}`);
+
+      // ВАЖНО: на фронте нужно положить orderId в metadata при создании платежа.
+      const orderId = payment?.metadata?.orderId;
+      if (!orderId) {
+        // На крайний случай попробуем найти заказ по старой схеме по paymentId,
+        // но правильный путь — передавать metadata.orderId из фронта.
+        console.warn('В платеже нет metadata.orderId — проверь фронт.');
+      }
+
+      const orders = req.app.locals.orderCollection as any;
+
+      // Если есть orderId — обновляем конкретный заказ, иначе (не рекомендуется) создадим запись по paymentId
+      if (orderId) {
+        await orders.updateOne(
+          { orderId },
+          {
+            $set: {
+              status: 'paid',
+              paymentId,
+              piPayment: payment,
+              updatedAt: new Date()
+            }
+          }
+        );
+      } else {
+        await orders.insertOne({
+          orderId: null,
+          amount: Number(payment?.amount ?? 0),
+          memo: payment?.memo,
+          status: 'paid',
+          paymentId,
+          piPayment: payment,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        });
+      }
+
+      // Сообщаем Pi, что наш сервер подтвердил готовность обработать платёж
+      await platformAPIClient.post(`/v2/payments/${paymentId}/approve`);
+
+      // Сразу же завершаем платёж (можно делать и после onComplete на фронте)
+      await platformAPIClient.post(`/v2/payments/${paymentId}/complete`, {});
+
+      if (orderId) {
+        await orders.updateOne(
+          { orderId },
+          { $set: { status: 'completed', updatedAt: new Date() } }
+        );
+      } else {
+        await orders.updateOne(
+          { paymentId },
+          { $set: { status: 'completed', updatedAt: new Date() } }
+        );
+      }
+
+      return res.json({ ok: true });
+    } catch (e: any) {
+      // Частый случай: 401/404 от Pi API (неверный/истёкший токен или неправильный ID)
+      console.error('Ошибка в /payments/approve:', e?.response?.status, e?.response?.data || e);
+      return res.status(401).json({ error: 'approve failed' });
     }
-
-    const app = req.app;
-
-    const paymentId = req.body.paymentId;
-    const currentPayment = await platformAPIClient.get(`/v2/payments/${paymentId}`);
-    const orderCollection = app.locals.orderCollection;
-
-    /* 
-      implement your logic here 
-      e.g. creating an order record, reserve an item if the quantity is limited, etc...
-    */
-
-    await orderCollection.insertOne({
-      pi_payment_id: paymentId,
-      product_id: currentPayment.data.metadata.productId,
-      user: req.session.currentUser.uid,
-      txid: null,
-      paid: false,
-      cancelled: false,
-      created_at: new Date()
-    });
-
-    // let Pi Servers know that you're ready
-    await platformAPIClient.post(`/v2/payments/${paymentId}/approve`);
-    return res.status(200).json({ message: `Approved the payment ${paymentId}` });
   });
 
-  // complete the current payment
+  /**
+   * 3) Отметить платёж/заказ завершённым вручную (опционально).
+   * Если ты уже делаешь /complete в /approve — этот эндпоинт может не понадобиться.
+   * Оставим для совместимости/отладки.
+   */
   router.post('/complete', async (req, res) => {
-    const app = req.app;
+    try {
+      const { paymentId, txid } = req.body;
+      if (!paymentId) return res.status(400).json({ error: 'paymentId обязателен' });
 
-    const paymentId = req.body.paymentId;
-    const txid = req.body.txid;
-    const orderCollection = app.locals.orderCollection;
+      const orders = req.app.locals.orderCollection as any;
 
-    /* 
-      implement your logic here
-      e.g. verify the transaction, deliver the item to the user, etc...
-    */
+      await orders.updateOne(
+        { paymentId },
+        { $set: { txid: txid || null, status: 'completed', updatedAt: new Date() } }
+      );
 
-    await orderCollection.updateOne({ pi_payment_id: paymentId }, { $set: { txid: txid, paid: true } });
+      await platformAPIClient.post(`/v2/payments/${paymentId}/complete`, { txid });
 
-    // let Pi server know that the payment is completed
-    await platformAPIClient.post(`/v2/payments/${paymentId}/complete`, { txid });
-    return res.status(200).json({ message: `Completed the payment ${paymentId}` });
+      return res.json({ ok: true });
+    } catch (e) {
+      console.error('Ошибка в /payments/complete:', e);
+      return res.status(500).json({ error: 'complete failed' });
+    }
   });
 
-  // handle the cancelled payment
+  /**
+   * 4) Обработка отмены
+   * Лучше присылать orderId (проще найти запись), но поддержим и paymentId.
+   */
   router.post('/cancelled_payment', async (req, res) => {
-    const app = req.app;
+    try {
+      const { orderId, paymentId } = req.body;
+      const orders = req.app.locals.orderCollection as any;
 
-    const paymentId = req.body.paymentId;
-    const orderCollection = app.locals.orderCollection;
+      if (!orderId && !paymentId) {
+        return res.status(400).json({ error: 'нужен orderId или paymentId' });
+      }
 
-    /*
-      implement your logic here
-      e.g. mark the order record to cancelled, etc...
-    */
+      const filter = orderId ? { orderId } : { paymentId };
+      await orders.updateOne(filter, {
+        $set: { status: 'cancelled', updatedAt: new Date() }
+      });
 
-    await orderCollection.updateOne({ pi_payment_id: paymentId }, { $set: { cancelled: true } });
-    return res.status(200).json({ message: `Cancelled the payment ${paymentId}` });
-  })
+      return res.json({ ok: true });
+    } catch (e) {
+      console.error('Ошибка в /payments/cancelled_payment:', e);
+      return res.status(500).json({ error: 'cancel failed' });
+    }
+  });
+
+  /**
+   * 5) (Опционально) Колбэк для "incomplete" из старых примеров.
+   * Если используешь, он проверяет мемо в Horizon и завершает платёж.
+   * Можно оставить для отладки, но основной поток выше уже всё делает.
+   */
+  router.post('/incomplete', async (req, res) => {
+    try {
+      const payment = req.body.payment;
+      const paymentId = payment?.identifier;
+      const txid = payment?.transaction?.txid;
+      const txURL = payment?.transaction?._link;
+
+      if (!paymentId || !txURL) {
+        return res.status(400).json({ error: 'paymentId или txURL отсутствует' });
+      }
+
+      const orders = req.app.locals.orderCollection as any;
+      const order = await orders.findOne({ paymentId });
+
+      if (!order) {
+        return res.status(400).json({ message: "Заказ не найден" });
+      }
+
+      // Простая проверка мемо в Horizon (для тестнета)
+      const hRes = await axios.create({ timeout: 20000 }).get(txURL);
+      const memoFromBlock = hRes?.data?.memo;
+      if (memoFromBlock && memoFromBlock !== paymentId) {
+        return res.status(400).json({ message: "Мемо в блоке не совпадает с paymentId" });
+      }
+
+      await orders.updateOne(
+        { paymentId },
+        { $set: { txid, status: 'completed', updatedAt: new Date() } }
+      );
+
+      await platformAPIClient.post(`/v2/payments/${paymentId}/complete`, { txid });
+
+      return res.json({ message: `Handled incomplete payment ${paymentId}` });
+    } catch (e) {
+      console.error('Ошибка в /payments/incomplete:', e);
+      return res.status(500).json({ error: 'incomplete failed' });
+    }
+  });
+
+  /**
+   * 6) Утилита для отладки — получить заказ по orderId
+   */
+  router.get('/orders/:orderId', async (req, res) => {
+    const orders = req.app.locals.orderCollection as any;
+    const order = await orders.findOne({ orderId: req.params.orderId });
+    if (!order) return res.status(404).json({ error: 'not found' });
+    res.json(order);
+  });
 }
