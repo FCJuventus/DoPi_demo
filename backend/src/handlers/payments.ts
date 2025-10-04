@@ -142,9 +142,25 @@ router.post('/approve', async (req, res) => {
 
     // Сообщаем Pi, что завершили
     await platformAPIClient.post(`/v2/payments/${paymentId}/complete`, { txid });
+  try {
+    const orders = app.locals.orderCollection;
+    const jobs = app.locals.jobCollection;           // ← в index.ts должна быть зарегистрирована коллекция jobs
 
-    return res.status(200).json({ message: `Completed payment ${paymentId}` });
-  });
+    // находим ордер по paymentId и берём jobId
+    const order = await orders.findOne({ pi_payment_id: paymentId });
+    if (order?.jobId) {
+      await jobs.updateOne(
+        { _id: new ObjectId(order.jobId) },
+        { $set: { status: 'paid', updatedAt: new Date() } }
+      );
+    }
+  } catch (e) {
+    // не роняем ответ клиенту, просто логируем
+    console.error('[payments/complete] failed to set job to paid:', e);
+  }
+
+  return res.status(200).json({ message: `Completed payment ${paymentId}` });
+});
 
   // ===== 4) Отмена =====
   router.post('/cancelled_payment', async (req, res) => {
