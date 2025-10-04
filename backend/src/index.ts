@@ -81,8 +81,8 @@ app.use(session({
     collectionName: 'user_sessions'
   }),
   cookie: process.env.NODE_ENV === 'production'
-    ? { sameSite: 'none', secure: true } // для Render (https)
-    : { sameSite: 'lax', secure: false } // для локалки (http://localhost)
+    ? { sameSite: 'none', secure: true }
+    : { sameSite: 'lax', secure: false }
 }));
 
 // ---------- Роуты ----------
