@@ -10,6 +10,7 @@ import { MongoClient } from 'mongodb';
 import env from './environments';
 import mountPaymentsEndpoints from './handlers/payments';
 import mountUserEndpoints from './handlers/users';
+import mountJobsEndpoints from './handlers/jobs';
 
 // Типы для session (как у тебя и было)
 import "./types/session";
@@ -96,6 +97,14 @@ app.use('/payments', paymentsRouter);
 const userRouter = express.Router();
 mountUserEndpoints(userRouter);
 app.use('/user', userRouter);
+
+// ...
+const apiRouter = express.Router();
+app.use('/api', apiRouter);
+
+const jobsRouter = express.Router();
+mountJobsEndpoints(jobsRouter);
+apiRouter.use('/jobs', jobsRouter);
 
 // Простой ответ на корень (для проверки)
 app.get('/', async (_, res) => {
