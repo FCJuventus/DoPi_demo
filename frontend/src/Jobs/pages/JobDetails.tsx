@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { JobsAPI, PaymentsAPI } from "../api";
 import { useTranslation } from "react-i18next";
+import { calcFee } from "../../config";
 
 declare global {
   interface Window { Pi: any; }
@@ -78,6 +79,8 @@ export default function JobDetails({ currentUser }: { currentUser: any }) {
     setJob(await JobsAPI.get(id));
   }
 
+  const { fee, total } = calcFee(job.budgetPi);
+  
   return (
     <div style={{ display: "grid", gap: 8 }}>
       <h2>{job.title}</h2>
@@ -101,6 +104,14 @@ export default function JobDetails({ currentUser }: { currentUser: any }) {
       {isOwner && (job.status === "open" || job.status === "awarded") && (
         <button onClick={cancel}>{t("cancel")}</button>
       )}
+      <div className="card" style={{marginTop: 12}}>
+  <div style={{display:"grid", gap:8}}>
+    <div><strong>Бюджет:</strong> {job.budgetPi} Test-Pi</div>
+    <div><strong>Комиссия платформы:</strong> {fee} Test-Pi</div>
+    <div><strong>Итого к оплате:</strong> {total} Test-Pi</div>
+  </div>
+</div>
     </div>
+    
   );
 }
