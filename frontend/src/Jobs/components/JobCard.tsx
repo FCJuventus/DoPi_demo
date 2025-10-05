@@ -1,23 +1,20 @@
+// frontend/src/Jobs/components/JobCard.tsx
 import React from "react";
+import { useTranslation } from "react-i18next";
 
-type Props = {
-  title: string;
-  description: string;
-  budgetPi: number;
-  status: string;
-  onOpen?: ()=>void;
-};
-
-export default function JobCard({title, description, budgetPi, status, onOpen}: Props){
+export default function JobCard({ job }: { job: any }) {
+  const { t } = useTranslation();
   return (
     <div className="card">
-      <div className="h2" style={{marginBottom:6}}>{title}</div>
-      <div className="muted" style={{marginBottom:10}}>{description}</div>
-      <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:8}}>
-        <div className="muted">Status: <b>{status}</b></div>
-        <div style={{fontWeight:700}}>⧫ {budgetPi} Test-Pi</div>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", gap:8 }}>
+        <strong style={{ fontSize:16 }}>{job.title}</strong>
+        <span style={{ opacity:.8 }}>{t("budgetPi")}: {job.budgetPi}</span>
       </div>
-      {onOpen && <div style={{marginTop:12}}><button className="btn" onClick={onOpen}>Открыть</button></div>}
+      <div style={{ color:"#9aa3b2", margin:"6px 0 10px" }}>{job.description}</div>
+      <div style={{ display:"flex", justifyContent:"space-between" }}>
+        <span>{t("status")}: {t(job.status)}</span>
+        <a className="btn btn-outline" href={`#/jobs/${job._id}`}>{t("details")}</a>
+      </div>
     </div>
   );
 }
