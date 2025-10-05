@@ -32,6 +32,7 @@ export default function JobDetails({ currentUser }: { currentUser: any }) {
   if (!job) return <div>Loading...</div>;
 
   const isOwner = !!currentUser && job.creatorUid === currentUser.uid;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const isFreelancer = !!currentUser && job.freelancerUid === currentUser.uid;
 
   async function assignSelf() {
