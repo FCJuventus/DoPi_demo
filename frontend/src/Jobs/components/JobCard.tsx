@@ -1,16 +1,23 @@
 import React from "react";
-import { useTranslation } from "react-i18next";
 
-export default function JobCard({ job }: { job: any }) {
-  const { t } = useTranslation();
+type Props = {
+  title: string;
+  description: string;
+  budgetPi: number;
+  status: string;
+  onOpen?: ()=>void;
+};
+
+export default function JobCard({title, description, budgetPi, status, onOpen}: Props){
   return (
-    <div style={{ border: "1px solid #ddd", padding: 12, borderRadius: 8, marginBottom: 10 }}>
-      <div><strong>{job.title}</strong></div>
-      <div>{job.description}</div>
-      <div>{t("budgetPi")}: {job.budgetPi}</div>
-      <div>{t("status")}: {t(job.status)}</div>
-      <a href={`#/jobs/${job._id}`}>{t("details")}</a>
+    <div className="card">
+      <div className="h2" style={{marginBottom:6}}>{title}</div>
+      <div className="muted" style={{marginBottom:10}}>{description}</div>
+      <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:8}}>
+        <div className="muted">Status: <b>{status}</b></div>
+        <div style={{fontWeight:700}}>⧫ {budgetPi} Test-Pi</div>
+      </div>
+      {onOpen && <div style={{marginTop:12}}><button className="btn" onClick={onOpen}>Открыть</button></div>}
     </div>
   );
 }
-
