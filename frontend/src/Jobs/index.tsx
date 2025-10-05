@@ -32,9 +32,9 @@ export default function Jobs({ currentUser }: Props) {
   } else if (hash === "#/jobs/new") {
     page = <JobCreate />;
   } else if (hash === "#/my") {
-    page = <JobList onlyMine />;
+    page = <JobList onlyMine currentUser={currentUser} />;
   } else {
-    page = <JobList />;
+    page = <JobList currentUser={currentUser} />;
   }
 
   return <>{page}</>;
