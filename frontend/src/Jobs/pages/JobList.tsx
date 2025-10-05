@@ -16,5 +16,17 @@ export default function JobList() {
   if (!items.length) return <div>{t("noJobs")}</div>;
 
   return <div>{items.map(j => <JobCard key={j._id} job={j} />)}</div>;
+  // внутри return в JobList.tsx
+<div className="section">
+  <h2>{t("jobs")}</h2>
+  {jobs.length === 0 ? (
+    <div className="card">{t("noJobs")}</div>
+  ) : (
+    <div className="grid grid-2">
+      {jobs.map((j: any) => <JobCard key={j._id} job={j} />)}
+    </div>
+  )}
+</div>
+
 }
 
