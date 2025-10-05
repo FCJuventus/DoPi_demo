@@ -56,16 +56,46 @@ router.post('/approve', async (req, res) => {
   const app = req.app;
   const payments = app.locals.orderCollection;
   const jobs = app.locals.jobCollection; // ← добавили
-
   const paymentId: string = req.body.paymentId;
 
   // Забираем платёж у Pi — в metadata должны быть jobId, contractId, amount
   const currentPayment = await platformAPIClient.get(`/v2/payments/${paymentId}`);
   const md = currentPayment.data.metadata || {};
+  const jobId = currentPayment.data.metadata?.jobId;
+  const budgetPi = +currentPayment.data.metadata?.budgetPi || 0;
+  const feePi = +currentPayment.data.metadata?.feePi || 0;
+  const totalPi = +currentPayment.data.metadata?.totalPi || 0;
 
   if (!md.jobId || !md.contractId || typeof md.amount !== 'number') {
     return res.status(400).json({ message: 'Некорректные metadata: нужны jobId, contractId, amount' });
   }
+
+  // Пересчитаем ожидаемую комиссию на сервере, чтобы не доверять фронту
+const pctFee = +(budgetPi * req.app.locals.env.app_fee_pct).toFixed(2);
+const expectedFee = Math.max(pctFee, req.app.locals.env.app_fee_min);
+const expectedTotal = +(budgetPi + expectedFee).toFixed(2);
+
+// Сверим с суммой платежа
+if (currentPayment.data.amount !== expectedTotal) {
+  return res.status(400).json({ message: "Некорректная сумма платежа" });
+}
+
+// Создадим заказ/обновим
+await orderCollection.insertOne({
+  pi_payment_id: paymentId,
+  product_id: jobId || currentPayment.data.metadata?.productId,
+  user: req.session.currentUser.uid,
+  txid: null,
+  paid: false,
+  cancelled: false,
+  created_at: new Date(),
+  feePi: expectedFee,
+  totalPi: expectedTotal,
+});
+
+// Готовы принять — сообщаем Pi
+await platformAPIClient.post(`/v2/payments/${paymentId}/approve`);
+return res.status(200).json({ message: `Approved the payment ${paymentId}` });
 
   // Проверим, что задача существует и сумма совпадает с её бюджетом
   const jobId = new ObjectId(md.jobId);
