@@ -23,6 +23,8 @@ interface Environment {
   mongo_user: string,
   mongo_password: string,
   frontend_url: string,
+  app_fee_pct: number; // 0.05 = 5%
+  app_fee_min: number; // 0.01
 }
 
 const env: Environment = {
@@ -34,6 +36,8 @@ const env: Environment = {
   mongo_user: process.env.MONGODB_USERNAME || '',
   mongo_password: process.env.MONGODB_PASSWORD || '',
   frontend_url: process.env.FRONTEND_URL || 'http://localhost:3314',
+  app_fee_pct: +(process.env.APP_FEE_PCT || "0.05"),
+  app_fee_min: +(process.env.APP_FEE_MIN || "0.01"),
 };
 
 export default env;
