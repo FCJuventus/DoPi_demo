@@ -148,7 +148,22 @@ return res.status(200).json({ message: `Approved the payment ${paymentId}` });
 
     const paymentId: string = req.body.paymentId;
     const txid: string = req.body.txid;
+const order = await orderCollection.findOne({ pi_payment_id: paymentId });
+if (!order) {
+  return res.status(404).json({ message: "Order not found" });
+}
 
+// Можно добавить ещё раз проверку суммы (опционально, мы уже сверяли в /approve)
+
+// Обновляем оплату
+await orderCollection.updateOne(
+  { pi_payment_id: paymentId },
+  { $set: { txid: txid, paid: true, paidAt: new Date() } }
+);
+
+// Сообщаем Pi серверу
+await platformAPIClient.post(`/v2/payments/${paymentId}/complete`, { txid });
+return res.status(200).json({ message: `Completed the payment ${paymentId}` });
     // Отмечаем как оплаченный, если запись уже есть
     const result = await payments.updateOne(
       { pi_payment_id: paymentId },
