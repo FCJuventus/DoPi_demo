@@ -16,13 +16,13 @@ export default function JobsApp() {
 
   // Маршруты через hash (как у тебя и сделано)
   if (hash.startsWith("#/jobs/") && hash !== "#/jobs/new") {
-    page = <JobDetails />;
+  page = <JobDetails currentUser={currentUser} />;
   } else if (hash === "#/jobs/new") {
     page = <JobCreate />;
   } else if (hash === "#/my") {
-    page = <MyJobs />;
+    page = <MyJobs currentUser={currentUser} />;
   } else {
-    page = <JobList />;
+    page = <JobList currentUser={currentUser} />;
   }
 
   return (
