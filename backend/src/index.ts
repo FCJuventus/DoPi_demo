@@ -128,6 +128,7 @@ app.listen(PORT, async () => {
     });
 
     const db = client.db(dbName);
+    app.locals.env = env;
     app.locals.orderCollection = db.collection('orders');
     app.locals.userCollection = db.collection('users');
     app.locals.jobCollection = db.collection('jobs');
