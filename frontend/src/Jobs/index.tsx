@@ -5,12 +5,12 @@ import JobCreate from "./pages/JobCreate";
 import JobDetails from "./pages/JobDetails";
 import MyJobs from "./pages/MyJobs";
 import { AuthAPI } from "./api";
-import { useLocation } from 'react-router-dom';
 
 declare global { interface Window { Pi: any; } }
 
+// Роутер на хэшах:
 function route() {
-  const h = location.hash.replace(/^#/, "");
+  const h = window.location.hash.replace(/^#/, ""); // ← тут заменили
   if (!h || h === "/") return { page: "list" as const };
   if (h === "/create") return { page: "create" as const };
   if (h === "/my") return { page: "my" as const };
@@ -32,10 +32,13 @@ export default function JobsApp() {
   async function signIn() {
     if (!window.Pi) return alert("Pi SDK не найден");
     const scopes = ["username", "payments", "wallet_address"];
-    window.Pi.authenticate(scopes, onIncompletePaymentFound).then(async (authResult: any) => {
-      await AuthAPI.signin(authResult);
-      setCurrentUser(authResult.user);
-    }).catch(console.error);
+    window.Pi
+      .authenticate(scopes, onIncompletePaymentFound)
+      .then(async (authResult: any) => {
+        await AuthAPI.signin(authResult);
+        setCurrentUser(authResult.user);
+      })
+      .catch(console.error);
   }
 
   async function onIncompletePaymentFound(payment: any) {
@@ -58,4 +61,3 @@ export default function JobsApp() {
     </div>
   );
 }
-
