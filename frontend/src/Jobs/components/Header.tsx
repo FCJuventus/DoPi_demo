@@ -1,43 +1,66 @@
+// frontend/src/Jobs/components/Header.tsx
 import React from "react";
-import { NavLink } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 
-interface HeaderProps {
-  onLogin: () => void;
-  onLogout: () => void;
-  isAuthed: boolean;
-  lang: "ru" | "en";
-  setLang: (l:"ru"|"en") => void;
-}
+export default function Header() {
+  const { t, i18n } = useTranslation();
 
-export default function Header({
-  onLogin, onLogout, isAuthed, lang, setLang
-}: HeaderProps){
-  const { t } = useTranslation();
+  const switchLang = (lng: "ru" | "en") => {
+    i18n.changeLanguage(lng);
+    // чтобы сохранить язык в адресе (не обязательно):
+    const url = new URL(window.location.href);
+    url.searchParams.set("lang", lng);
+    window.history.replaceState({}, "", url.toString());
+  };
+
+  // заглушки под вход/выход
+  const handleSignIn = () => {
+    window.location.href = "#/signin";
+  };
+  const handleSignOut = () => {
+    fetch("/user/signout", { credentials: "include" }).finally(() => {
+      window.location.href = "/";
+    });
+  };
 
   return (
-    <header className="appbar">
-      <div className="appbar-inner">
-        <div className="brand">{t("appName","DoPi Фриланс")}</div>
+    <header className="app-header">
+      <div className="container header-inner">
+        <a href="/" className="brand">
+          DoPi
+        </a>
 
         <nav className="nav">
-          <NavLink to="/" end className={({isActive})=>isActive?"active":""}>{t("jobs.all","Задачи")}</NavLink>
-          <NavLink to="/my" className={({isActive})=>isActive?"active":""}>{t("jobs.mine","Мои задачи")}</NavLink>
-          <NavLink to="/create" className={({isActive})=>isActive?"active":""}>{t("jobs.create","Создать задачу")}</NavLink>
+          <a href="#/" className="nav-link">{t("jobs")}</a>
+          <a href="#/my" className="nav-link">{t("myJobs")}</a>
+          <a href="#/jobs/new" className="btn btn-primary">{t("postJob")}</a>
         </nav>
 
-        <div className="nav">
+        <div className="right">
           <div className="lang">
-            <span className="muted">{t("lang","Язык")}:</span>
-            <button className={lang==="ru"?"active":""} onClick={()=>setLang("ru")}>Русский</button>
-            <button className={lang==="en"?"active":""} onClick={()=>setLang("en")}>English</button>
+            <button
+              className={`lang-btn ${i18n.language.startsWith("ru") ? "active" : ""}`}
+              onClick={() => switchLang("ru")}
+            >
+              RU
+            </button>
+            <span className="lang-sep">/</span>
+            <button
+              className={`lang-btn ${i18n.language.startsWith("en") ? "active" : ""}`}
+              onClick={() => switchLang("en")}
+            >
+              EN
+            </button>
           </div>
 
-          {!isAuthed ? (
-            <button className="btn secondary" onClick={onLogin}>{t("auth.signin","Войти")}</button>
-          ) : (
-            <button className="btn ghost" onClick={onLogout}>{t("auth.signout","Выйти")}</button>
-          )}
+          <div className="auth">
+            <button className="btn btn-outline" onClick={handleSignIn}>
+              {t("signIn")}
+            </button>
+            <button className="btn btn-ghost" onClick={handleSignOut}>
+              {t("signOut")}
+            </button>
+          </div>
         </div>
       </div>
     </header>
