@@ -23,15 +23,25 @@ export default function App() {
     setCurrentUser(null);
   };
 
-  return (
-    <>
-      <Header
-        onLogin={handleLogin}
-        onLogout={handleLogout}
-        isAuthed={!!currentUser}
-        currentUser={currentUser}
-      />
+ return (
+  <>
+    <Header
+      onLogin={handleLogin}
+      onLogout={handleLogout}
+      isAuthed={!!currentUser}
+      currentUser={currentUser}
+    />
+    <main
+      style={{
+        maxWidth: 960,
+        margin: "16px auto",
+        padding: "0 16px",
+        display: "grid",
+        gap: 16
+      }}
+    >
       <Jobs currentUser={currentUser || undefined} />
-    </>
-  );
+    </main>
+  </>
+);
 }
