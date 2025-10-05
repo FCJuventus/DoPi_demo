@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import JobList from "./pages/JobList";
 import JobCreate from "./pages/JobCreate";
 import JobDetails from "./pages/JobDetails";
@@ -7,8 +7,22 @@ type Props = {
   currentUser?: any; // пользователь из App
 };
 
+// Хук: следим за window.location.hash
+function useHash(): string {
+  const getHash = () => window.location.hash || "";
+  const [hash, setHash] = useState<string>(getHash);
+
+  useEffect(() => {
+    const onHashChange = () => setHash(getHash());
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, []);
+
+  return hash;
+}
+
 export default function Jobs({ currentUser }: Props) {
-  const hash = window.location.hash || "";
+  const hash = useHash();
 
   let page: React.ReactNode = <JobList />;
 
