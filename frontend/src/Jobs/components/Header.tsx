@@ -1,67 +1,73 @@
 // frontend/src/Jobs/components/Header.tsx
 import React from "react";
-import { useTranslation } from "react-i18next";
 
-export default function Header() {
-  const { t, i18n } = useTranslation();
+type Props = {
+  onLogin: () => Promise<void> | void;
+  onLogout: () => Promise<void> | void;
+  isAuthed: boolean;
+  currentUser?: any;
+};
 
-  const switchLang = (lng: "ru" | "en") => {
-    i18n.changeLanguage(lng);
-    // чтобы сохранить язык в адресе (не обязательно):
-    const url = new URL(window.location.href);
-    url.searchParams.set("lang", lng);
-    window.history.replaceState({}, "", url.toString());
-  };
-
-  // заглушки под вход/выход
-  const handleSignIn = () => {
-    window.location.href = "#/signin";
-  };
-  const handleSignOut = () => {
-    fetch("/user/signout", { credentials: "include" }).finally(() => {
-      window.location.href = "/";
-    });
-  };
-
+export default function Header({ onLogin, onLogout, isAuthed, currentUser }: Props) {
   return (
-    <header className="app-header">
-      <div className="container header-inner">
-        <a href="/" className="brand">
-          DoPi
-        </a>
-
-        <nav className="nav">
-          <a href="#/" className="nav-link">{t("jobs")}</a>
-          <a href="#/my" className="nav-link">{t("myJobs")}</a>
-          <a href="#/jobs/new" className="btn btn-primary">{t("postJob")}</a>
+    <header
+      style={{
+        position: "sticky",
+        top: 0,
+        zIndex: 10,
+        background: "#0f172a", // тёмный синий
+        color: "white",
+        padding: "12px 16px",
+        borderBottom: "1px solid #1f2937",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between"
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <span style={{ fontWeight: 700, letterSpacing: 0.4 }}>DoPi</span>
+        <nav style={{ display: "flex", gap: 8 }}>
+          <a href="#/" style={{ color: "white", textDecoration: "none", opacity: 0.9 }}>Задания</a>
+          <a href="#/my" style={{ color: "white", textDecoration: "none", opacity: 0.9 }}>Мои</a>
+          <a href="#/jobs/new" style={{ color: "white", textDecoration: "none", opacity: 0.9 }}>Новое задание</a>
         </nav>
+      </div>
 
-        <div className="right">
-          <div className="lang">
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        {isAuthed ? (
+          <>
+            <span style={{ opacity: 0.9 }}>
+              {currentUser?.username || currentUser?.uid || "Профиль"}
+            </span>
             <button
-              className={`lang-btn ${i18n.language.startsWith("ru") ? "active" : ""}`}
-              onClick={() => switchLang("ru")}
+              onClick={() => onLogout()}
+              style={{
+                padding: "8px 12px",
+                borderRadius: 8,
+                border: "1px solid #334155",
+                background: "#111827",
+                color: "white",
+                cursor: "pointer"
+              }}
             >
-              RU
+              Выйти
             </button>
-            <span className="lang-sep">/</span>
-            <button
-              className={`lang-btn ${i18n.language.startsWith("en") ? "active" : ""}`}
-              onClick={() => switchLang("en")}
-            >
-              EN
-            </button>
-          </div>
-
-          <div className="auth">
-            <button className="btn btn-outline" onClick={handleSignIn}>
-              {t("signIn")}
-            </button>
-            <button className="btn btn-ghost" onClick={handleSignOut}>
-              {t("signOut")}
-            </button>
-          </div>
-        </div>
+          </>
+        ) : (
+          <button
+            onClick={() => onLogin()}
+            style={{
+              padding: "8px 12px",
+              borderRadius: 8,
+              border: "1px solid #22c55e",
+              background: "#16a34a",
+              color: "white",
+              cursor: "pointer"
+            }}
+          >
+            Войти с Pi
+          </button>
+        )}
       </div>
     </header>
   );
