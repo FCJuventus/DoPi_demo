@@ -21,7 +21,8 @@ function useHashId() {
   return id;
 }
 
-export default function JobDetails({ currentUser }: { currentUser: any }) {
+type Props = { currentUser?: any };
+export default function JobDetails({ currentUser }: Props) { /* ... */ } {
   const { t } = useTranslation();
   const id = useHashId();
   const [job, setJob] = useState<any|null>(null);
