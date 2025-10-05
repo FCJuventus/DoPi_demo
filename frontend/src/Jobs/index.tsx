@@ -5,6 +5,7 @@ import JobCreate from "./pages/JobCreate";
 import JobDetails from "./pages/JobDetails";
 import MyJobs from "./pages/MyJobs";
 import { AuthAPI } from "./api";
+import { useLocation } from 'react-router-dom';
 
 declare global { interface Window { Pi: any; } }
 
