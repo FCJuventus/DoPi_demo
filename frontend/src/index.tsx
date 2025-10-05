@@ -1,13 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom';
-import 'normalize.css';
-import './defaults.css';
-import Shop from './Shop';
-import "./i18n";
+import './i18n';
+import JobsApp from './Jobs';
 
-ReactDOM.render(
-  <React.StrictMode>
-    <Shop />
-  </React.StrictMode>,
-  document.getElementById('root')
-);
+ReactDOM.render(<JobsApp />, document.getElementById('root'));
