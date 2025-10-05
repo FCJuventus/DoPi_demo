@@ -1,23 +1,9 @@
-// ...твой импорт
+// frontend/src/App.tsx
+import React from "react";
 import "./defaults.css";
+import "./i18n";
+import JobsApp from "./Jobs";
 
-export default function App(){
-  // ...твоя логика (i18n, авторизация и т.д.)
-
-  return (
-    <>
-      <Header
-        onLogin={handleLogin}
-        onLogout={handleLogout}
-        isAuthed={!!currentUser}
-        lang={lang}
-        setLang={setLang}
-      />
-      <main className="container">
-        <Routes>
-          {/* твои роуты */}
-        </Routes>
-      </main>
-    </>
-  )
+export default function App() {
+  return <JobsApp />; // Header уже внутри JobsApp
 }
