@@ -1,4 +1,7 @@
-const API_URL = "https://dopi-demo.onrender.com"; // твой бэкенд
+const API_URL = 
+  (window as any).__API_BASE__ ||
+  process.env.REACT_APP_API_BASE ||
+  "https://dopi-demo.onrender.com";
 
 export async function apiGet(path: string) {
   const res = await fetch(API_URL + path, { credentials: "include" });
