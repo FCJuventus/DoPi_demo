@@ -7,12 +7,16 @@ declare global {
 }
 
 function useHashId() {
-  const [id, setId] = useState<string>(() => location.hash.split("/")[2] || "");
+  // Берём id из хэша вида "#/jobs/<id>"
+  const getIdFromHash = () => (window.location.hash.split("/")[2] || "");
+  const [id, setId] = useState<string>(getIdFromHash);
+
   useEffect(() => {
-    const h = () => setId(location.hash.split("/")[2] || "");
-    window.addEventListener("hashchange", h);
-    return () => window.removeEventListener("hashchange", h);
+    const onHashChange = () => setId(getIdFromHash());
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
   }, []);
+
   return id;
 }
 
@@ -27,8 +31,8 @@ export default function JobDetails({ currentUser }: { currentUser: any }) {
 
   if (!job) return <div>Loading...</div>;
 
-  const isOwner = currentUser && job.creatorUid === currentUser.uid;
-  const isFreelancer = currentUser && job.freelancerUid === currentUser.uid;
+  const isOwner = !!currentUser && job.creatorUid === currentUser.uid;
+  const isFreelancer = !!currentUser && job.freelancerUid === currentUser.uid;
 
   async function assignSelf() {
     if (!currentUser) return alert("Нужно войти");
@@ -43,20 +47,18 @@ export default function JobDetails({ currentUser }: { currentUser: any }) {
     const paymentData = {
       amount: job.budgetPi,
       memo: `Job ${job.title}`,
-      metadata: { jobId: job._id }, // ВАЖНО: связываем платёж с задачей
+      metadata: { jobId: job._id }, // связываем платёж с задачей
     };
 
     await window.Pi.createPayment(paymentData, {
       onReadyForServerApproval: async (paymentId: string) => {
-        // сервер создаст/зарезервирует заказ
         await PaymentsAPI.approve(paymentId);
       },
       onReadyForServerCompletion: async (paymentId: string, txid: string) => {
-        // сервер отметит завершение
         await PaymentsAPI.complete(paymentId, txid);
       },
       onCancel: async () => {
-        // опционально: ничего
+        // по желанию
       },
       onError: async (err: any) => {
         console.error(err);
@@ -101,4 +103,3 @@ export default function JobDetails({ currentUser }: { currentUser: any }) {
     </div>
   );
 }
-
