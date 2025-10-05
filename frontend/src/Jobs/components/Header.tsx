@@ -1,14 +1,13 @@
-// frontend/src/Jobs/components/Header.tsx
 import React from "react";
 
-type Props = {
+type HeaderProps = {
   onLogin: () => Promise<void> | void;
   onLogout: () => Promise<void> | void;
   isAuthed: boolean;
   currentUser?: any;
 };
 
-export default function Header({ onLogin, onLogout, isAuthed, currentUser }: Props) {
+export default function Header({ onLogin, onLogout, isAuthed, currentUser }: HeaderProps) {
   return (
     <header
       style={{
