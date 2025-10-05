@@ -1,36 +1,27 @@
-// frontend/src/Jobs/index.tsx
 import React from "react";
-import Header from "./components/Header";
 import JobList from "./pages/JobList";
-import JobDetails from "./pages/JobDetails";
 import JobCreate from "./pages/JobCreate";
-import MyJobs from "./pages/MyJobs";
+import JobDetails from "./pages/JobDetails";
 
-export default function JobsApp() {
-  // ВАЖНО: используем window.location, чтобы не ругался ESLint на 'location'
-  const params = new URLSearchParams(window.location.search);
-  const path = window.location.pathname;
-  const hash = window.location.hash;
+type Props = {
+  currentUser?: any; // пользователь из App
+};
 
-  let page: React.ReactNode = null;
+export default function Jobs({ currentUser }: Props) {
+  const hash = window.location.hash || "";
 
-  // Маршруты через hash (как у тебя и сделано)
+  let page: React.ReactNode = <JobList />;
+
+  // Маршруты через hash (как у тебя задумано)
   if (hash.startsWith("#/jobs/") && hash !== "#/jobs/new") {
-  page = <JobDetails currentUser={currentUser} />;
+    page = <JobDetails currentUser={currentUser} />;
   } else if (hash === "#/jobs/new") {
     page = <JobCreate />;
   } else if (hash === "#/my") {
-    page = <MyJobs currentUser={currentUser} />;
+    page = <JobList onlyMine />;
   } else {
-    page = <JobList currentUser={currentUser} />;
+    page = <JobList />;
   }
 
-  return (
-    <>
-      <Header />
-      <main className="container">
-        {page}
-      </main>
-    </>
-  );
+  return <>{page}</>;
 }
