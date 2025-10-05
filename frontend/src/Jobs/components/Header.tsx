@@ -1,7 +1,6 @@
 import React from "react";
 import LanguageSwitcher from "./LanguageSwitcher";
 import { useTranslation } from "react-i18next";
-import "../pi.d"; // если нужен тип для window.Pi, можно сделать пустую декларацию
 
 type Props = {
   currentUser: any;
