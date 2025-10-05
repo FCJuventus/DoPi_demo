@@ -1,11 +1,13 @@
+const API_URL = "https://dopi-demo.onrender.com"; // твой бэкенд
+
 export async function apiGet(path: string) {
-  const res = await fetch(path, { credentials: "include" });
+  const res = await fetch(API_URL + path, { credentials: "include" });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 }
 
 export async function apiPost(path: string, body?: any) {
-  const res = await fetch(path, {
+  const res = await fetch(API_URL + path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "include",
@@ -22,7 +24,7 @@ export const JobsAPI = {
   award: (id: string, freelancerUid: string) =>
     apiPost(`/jobs/${id}/award`, { freelancerUid }),
   payStart: (id: string) =>
-    apiPost(`/jobs/${id}/pay/start`), // если используешь этот маршрут
+    apiPost(`/jobs/${id}/pay/start`),
   paid: (id: string, paymentId: string, txid?: string) =>
     apiPost(`/jobs/${id}/paid`, { paymentId, txid }),
   complete: (id: string) => apiPost(`/jobs/${id}/complete`),
@@ -39,4 +41,3 @@ export const PaymentsAPI = {
   complete: (paymentId: string, txid: string) =>
     apiPost(`/payments/complete`, { paymentId, txid })
 };
-
