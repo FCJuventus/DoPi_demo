@@ -2,223 +2,137 @@ import axios from "axios";
 import { Router } from "express";
 import platformAPIClient from "../services/platformAPIClient";
 import "../types/session";
-import { ObjectId } from "mongodb";
 
-export default function mountPaymentsEndpoints(router: Router) {
-  // ===== 1) Webhook "incomplete" от Pi =====
-  // Приходит, когда транзакция в сети подтверждена, но мы ещё не сказали Pi "complete".
-  router.post('/incomplete', async (req, res) => {
-    const payment = req.body.payment;
-    const paymentId = payment.identifier;
-    const txid = payment.transaction && payment.transaction.txid;
-    const txURL = payment.transaction && payment.transaction._link;
+// Комиссия платформы (можно переопределить через ENV в Render)
+const APP_FEE_PCT = Number(process.env.APP_FEE_PCT ?? 0.05); // 5%
+const APP_FEE_MIN = Number(process.env.APP_FEE_MIN ?? 0.01); // мин. 0.01 Test-Pi
 
-    const app = req.app;
-    const payments = app.locals.orderCollection; // Переиспользуем коллекцию, но уже храним как payments
-
-    // Ищем запись о платеже у нас
-    const payDoc = await payments.findOne({ pi_payment_id: paymentId });
-
-    if (!payDoc) {
-      return res.status(400).json({ message: "Payment record not found" });
-    }
-
-    // Проверяем мемо в блокчейне — должно совпадать с нашим paymentId
-    const horizonResponse = await axios.create({ timeout: 20000 }).get(txURL);
-    const paymentIdOnBlock = horizonResponse.data.memo;
-
-    if (paymentIdOnBlock !== payDoc.pi_payment_id) {
-      return res.status(400).json({ message: "Payment id (memo) doesn't match" });
-    }
-
-    // Дополнительно можно проверить amount:
-    // const onchainAmount = Number(horizonResponse.data.amount);
-    // if (onchainAmount !== payDoc.amount) { ... }
-
-    // Отмечаем как оплаченный
-    await payments.updateOne(
-      { pi_payment_id: paymentId },
-      { $set: { txid, paid: true } }
-    );
-
-    // Говорим Pi Platform, что платёж завершён
-    await platformAPIClient.post(`/v2/payments/${paymentId}/complete`, { txid });
-
-    return res.status(200).json({ message: `Handled incomplete payment ${paymentId}` });
-  });
-
-  // ===== 2) Approve — наш сервер готов принять платёж =====
-router.post('/approve', async (req, res) => {
-  if (!req.session.currentUser) {
-    return res.status(401).json({ error: 'unauthorized', message: "Нужно войти" });
-  }
-
-  const app = req.app;
-  const payments = app.locals.orderCollection;
-  const jobs = app.locals.jobCollection; // ← добавили
-  const paymentId: string = req.body.paymentId;
-
-  // Забираем платёж у Pi — в metadata должны быть jobId, contractId, amount
-  const currentPayment = await platformAPIClient.get(`/v2/payments/${paymentId}`);
-  const md = currentPayment.data.metadata || {};
-  const jobId = currentPayment.data.metadata?.jobId;
-  const budgetPi = +currentPayment.data.metadata?.budgetPi || 0;
-  const feePi = +currentPayment.data.metadata?.feePi || 0;
-  const totalPi = +currentPayment.data.metadata?.totalPi || 0;
-
-  if (!md.jobId || !md.contractId || typeof md.amount !== 'number') {
-    return res.status(400).json({ message: 'Некорректные metadata: нужны jobId, contractId, amount' });
-  }
-
-  // Пересчитаем ожидаемую комиссию на сервере, чтобы не доверять фронту
-const pctFee = +(budgetPi * req.app.locals.env.app_fee_pct).toFixed(2);
-const expectedFee = Math.max(pctFee, req.app.locals.env.app_fee_min);
-const expectedTotal = +(budgetPi + expectedFee).toFixed(2);
-
-// Сверим с суммой платежа
-if (currentPayment.data.amount !== expectedTotal) {
-  return res.status(400).json({ message: "Некорректная сумма платежа" });
+function calcFee(budgetPi: number) {
+  const pct = +(budgetPi * APP_FEE_PCT).toFixed(2);
+  const fee = Math.max(pct, APP_FEE_MIN);
+  const total = +(budgetPi + fee).toFixed(2);
+  return { fee, total };
 }
 
-// Создадим заказ/обновим
-await orderCollection.insertOne({
-  pi_payment_id: paymentId,
-  product_id: jobId || currentPayment.data.metadata?.productId,
-  user: req.session.currentUser.uid,
-  txid: null,
-  paid: false,
-  cancelled: false,
-  created_at: new Date(),
-  feePi: expectedFee,
-  totalPi: expectedTotal,
-});
+export default function mountPaymentsEndpoints(router: Router) {
+  // 1) Входящий хук от Pi: "неполный платёж" (на чейн попал, но ещё не подтверждён нами)
+  router.post("/incomplete", async (req, res) => {
+    try {
+      const payment = req.body.payment;
+      const paymentId: string = payment.identifier;
+      const txid: string | null = payment.transaction?.txid ?? null;
+      const txURL: string | null = payment.transaction?._link ?? null;
 
-// Готовы принять — сообщаем Pi
-await platformAPIClient.post(`/v2/payments/${paymentId}/approve`);
-return res.status(200).json({ message: `Approved the payment ${paymentId}` });
+      const orderCollection = req.app.locals.orderCollection;
 
-  // Проверим, что задача существует и сумма совпадает с её бюджетом
-  const jobId = new ObjectId(md.jobId);
-  const job = await jobs.findOne({ _id: jobId });
+      const order = await orderCollection.findOne({ pi_payment_id: paymentId });
+      if (!order) return res.status(400).json({ message: "Order not found" });
 
-  if (!job) {
-    return res.status(400).json({ message: 'Задача не найдена по jobId из metadata' });
-  }
+      // Доп. верификация по Horizon (если есть ссылка)
+      if (txURL) {
+        const horizonResponse = await axios.create({ timeout: 20000 }).get(txURL);
+        const paymentIdOnBlock = horizonResponse.data.memo;
+        if (paymentIdOnBlock !== order.pi_payment_id) {
+          return res.status(400).json({ message: "Payment id doesn't match." });
+        }
+      }
 
-  // Если хочешь жёсткую проверку: сумма из metadata должна совпасть с бюджетом задачи
-  if (typeof job.budgetPi === 'number' && Number(md.amount) !== Number(job.budgetPi)) {
-    return res.status(400).json({ message: 'Сумма в metadata не совпадает с бюджетом задачи' });
-  }
+      // Помечаем как оплаченный и завершаем на Pi
+      await orderCollection.updateOne(
+        { pi_payment_id: paymentId },
+        { $set: { txid, paid: true, paidAt: new Date() } }
+      );
+      await platformAPIClient.post(`/v2/payments/${paymentId}/complete`, { txid });
 
-  // Создаём/поддерживаем запись о платеже (idempotent)
-  await payments.updateOne(
-    { pi_payment_id: paymentId },
-    {
-      $setOnInsert: {
+      return res.status(200).json({ message: `Handled the incomplete payment ${paymentId}` });
+    } catch (e) {
+      console.error(e);
+      return res.status(500).json({ error: "internal_error" });
+    }
+  });
+
+  // 2) Наше подтверждение готовности (резервация заказа под оплату)
+  router.post("/approve", async (req, res) => {
+    try {
+      if (!req.session || !req.session.currentUser) {
+        return res.status(401).json({ error: "unauthorized", message: "User needs to sign in first" });
+      }
+
+      const paymentId: string = req.body.paymentId;
+      if (!paymentId) return res.status(400).json({ message: "paymentId is required" });
+
+      const { data: currentPayment } = await platformAPIClient.get(`/v2/payments/${paymentId}`);
+
+      const budgetPi = Number(currentPayment?.metadata?.budgetPi ?? 0);
+      const { fee, total } = calcFee(budgetPi);
+
+      // Сверка суммы: то, что летит в платёж, должно совпасть с нашим расчётом
+      if (Number(currentPayment.amount) !== total) {
+        return res.status(400).json({ message: "Invalid payment amount" });
+      }
+
+      const jobId =
+        currentPayment?.metadata?.jobId ?? currentPayment?.metadata?.productId ?? null;
+
+      const orderCollection = req.app.locals.orderCollection;
+
+      await orderCollection.insertOne({
         pi_payment_id: paymentId,
-        jobId: job._id,                 // ← ссылка на задачу
-        contractId: md.contractId,
-        employerUid: req.session.currentUser.uid, // кто платит (у тебя было payerUid — унифицировал)
-        freelancerUid: job.freelancerUid ?? null, // можно заполнить, если задача уже "awarded"
-        amountPi: md.amount,            // унифицировал имя поля с задачей (amountPi)
+        product_id: jobId,
+        user: req.session.currentUser.uid,
         txid: null,
         paid: false,
         cancelled: false,
+        feePi: fee,
+        totalPi: total,
         created_at: new Date(),
-        updated_at: new Date(),
-      },
-      $set: {
-        // если запись уже есть — хотя бы обновим updated_at
-        updated_at: new Date(),
-      }
-    },
-    { upsert: true }
-  );
-
-  // Говорим Pi, что мы готовы принять платёж
-  await platformAPIClient.post(`/v2/payments/${paymentId}/approve`);
-
-  return res.status(200).json({ message: `Approved payment ${paymentId}` });
-});
-
-  // ===== 3) Complete — клиент прислал txid (обычно после success из SDK) =====
-  router.post('/complete', async (req, res) => {
-    const app = req.app;
-    const payments = app.locals.orderCollection;
-
-    const paymentId: string = req.body.paymentId;
-    const txid: string = req.body.txid;
-const order = await orderCollection.findOne({ pi_payment_id: paymentId });
-if (!order) {
-  return res.status(404).json({ message: "Order not found" });
-}
-
-// Можно добавить ещё раз проверку суммы (опционально, мы уже сверяли в /approve)
-
-// Обновляем оплату
-await orderCollection.updateOne(
-  { pi_payment_id: paymentId },
-  { $set: { txid: txid, paid: true, paidAt: new Date() } }
-);
-
-// Сообщаем Pi серверу
-await platformAPIClient.post(`/v2/payments/${paymentId}/complete`, { txid });
-return res.status(200).json({ message: `Completed the payment ${paymentId}` });
-    // Отмечаем как оплаченный, если запись уже есть
-    const result = await payments.updateOne(
-      { pi_payment_id: paymentId },
-      { $set: { txid, paid: true } }
-    );
-
-    if (result.matchedCount === 0) {
-      // На всякий случай — если не было approve (редкий случай), создадим упрощённую запись
-      await payments.insertOne({
-        pi_payment_id: paymentId,
-        jobId: null,
-        contractId: null,
-        payerUid: req.session.currentUser?.uid || null,
-        amount: null,
-        txid,
-        paid: true,
-        cancelled: false,
-        created_at: new Date()
       });
+
+      await platformAPIClient.post(`/v2/payments/${paymentId}/approve`);
+      return res.status(200).json({ message: `Approved the payment ${paymentId}` });
+    } catch (e) {
+      console.error(e);
+      return res.status(500).json({ error: "internal_error" });
     }
+  });
 
-    // Сообщаем Pi, что завершили
-    await platformAPIClient.post(`/v2/payments/${paymentId}/complete`, { txid });
-  try {
-    const orders = app.locals.orderCollection;
-    const jobs = app.locals.jobCollection;           // ← в index.ts должна быть зарегистрирована коллекция jobs
+  // 3) Завершение (мы проверили и подтверждаем)
+  router.post("/complete", async (req, res) => {
+    try {
+      const paymentId: string = req.body.paymentId;
+      const txid: string = req.body.txid;
 
-    // находим ордер по paymentId и берём jobId
-    const order = await orders.findOne({ pi_payment_id: paymentId });
-    if (order?.jobId) {
-      await jobs.updateOne(
-        { _id: new ObjectId(order.jobId) },
-        { $set: { status: 'paid', updatedAt: new Date() } }
+      const orderCollection = req.app.locals.orderCollection;
+      const order = await orderCollection.findOne({ pi_payment_id: paymentId });
+      if (!order) return res.status(404).json({ message: "Order not found" });
+
+      await orderCollection.updateOne(
+        { pi_payment_id: paymentId },
+        { $set: { txid, paid: true, paidAt: new Date() } }
       );
+      await platformAPIClient.post(`/v2/payments/${paymentId}/complete`, { txid });
+
+      return res.status(200).json({ message: `Completed the payment ${paymentId}` });
+    } catch (e) {
+      console.error(e);
+      return res.status(500).json({ error: "internal_error" });
     }
-  } catch (e) {
-    // не роняем ответ клиенту, просто логируем
-    console.error('[payments/complete] failed to set job to paid:', e);
-  }
+  });
 
-  return res.status(200).json({ message: `Completed payment ${paymentId}` });
-});
+  // 4) Отмена
+  router.post("/cancelled_payment", async (req, res) => {
+    try {
+      const paymentId: string = req.body.paymentId;
+      const orderCollection = req.app.locals.orderCollection;
 
-  // ===== 4) Отмена =====
-  router.post('/cancelled_payment', async (req, res) => {
-    const app = req.app;
-    const payments = app.locals.orderCollection;
-
-    const paymentId: string = req.body.paymentId;
-
-    await payments.updateOne(
-      { pi_payment_id: paymentId },
-      { $set: { cancelled: true } }
-    );
-
-    return res.status(200).json({ message: `Cancelled payment ${paymentId}` });
+      await orderCollection.updateOne(
+        { pi_payment_id: paymentId },
+        { $set: { cancelled: true } }
+      );
+      return res.status(200).json({ message: `Cancelled the payment ${paymentId}` });
+    } catch (e) {
+      console.error(e);
+      return res.status(500).json({ error: "internal_error" });
+    }
   });
 }
